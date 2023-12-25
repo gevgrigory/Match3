@@ -29,7 +29,7 @@ public class Board : MonoBehaviour
     private GameObject tilePrefab;
 
     [SerializeField]
-    private Transform itemsMask;
+    private SpriteMask itemsMask;
 
     [SerializeField]
     private Transform itemsParent;
@@ -111,8 +111,11 @@ public class Board : MonoBehaviour
     private void SetItemsMaskSize()
     {
         Vector2 boardSize = GetBoardSize();
-        itemsMask.transform.localScale = new Vector3(boardSize.x, boardSize.y, 1);
-        itemsParent.transform.localScale = new Vector3(1 / boardSize.x, 1 / boardSize.y, 1);
+        Vector3 maskSize = itemsMask.bounds.size;
+
+        Vector3 maskScale = new Vector3(boardSize.x / maskSize.x, boardSize.y / maskSize.y, 1);
+        itemsMask.transform.localScale = maskScale;
+        itemsParent.transform.localScale = new Vector3(1 / maskScale.x, 1 / maskScale.y, maskScale.z);
     }
 
     #endregion Initialization

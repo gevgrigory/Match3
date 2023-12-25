@@ -424,10 +424,9 @@ MonoBehaviour:
   - {fileID: 21300000, guid: ae712d202b3cc4d7c90a2835c291756b, type: 3}
   tilesParent: {fileID: 2084987629}
   tilePrefab: {fileID: 7037109401156661519, guid: ebbd43fcf538a43f5ad99984838b7b41, type: 3}
-  itemsMask: {fileID: 695397388}
+  itemsMask: {fileID: 695397389}
   itemsParent: {fileID: 2004533676}
   itemPrefab: {fileID: 6327802193907207444, guid: 4fde587c959d14bc789030d1797814d7, type: 3}
-  CanUserInteract: 0
 --- !u!4 &678707486
 Transform:
   m_ObjectHideFlags: 0
@@ -610,12 +609,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d9edaf9554f374fc6895ac788b692210, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  board: {fileID: 678707485}
   gameCamera: {fileID: 519420031}
+  background: {fileID: 1220677238}
+  board: {fileID: 678707485}
   minCameraSize: 7
   egdeOffsetWidthCoef: 0.9
   egdeOffsetHeightCoef: 0.7
-  background: {fileID: 1220677238}
 --- !u!1 &1220677237
 GameObject:
   m_ObjectHideFlags: 0
