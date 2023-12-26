@@ -15,7 +15,8 @@ Also, there is an ability to autoPlay, in case it can help developers or testers
 
 https://github.com/gevgrigory/Match3/assets/78232344/f3add346-814e-48c2-996c-6bdadfaf8dc6
 
-There is also an option to run a simulation of player moves by count, to check the level design and balance.
+There is also an option to run a simulation of player moves by count, to check the level design and balance, or find some issues during development.
+Within the simulation player moves can be fully randomized, or the ones, that lead to matching the gems.
 The simulation is done in a separate thread to not freeze the game, so the developer will have the ability to profile the process.
 
 https://github.com/gevgrigory/Match3/assets/78232344/9b75ac93-4b4a-4def-a6c1-b89041a912bf
