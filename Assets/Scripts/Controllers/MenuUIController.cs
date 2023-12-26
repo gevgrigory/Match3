@@ -20,8 +20,14 @@ public class MenuUIController : MonoBehaviour
         gameSetupDialog.Show(OnGameSetup);
     }
 
-    private void OnGameSetup(int rows, int columns, int colors)
+    private void OnGameSetup(GameDataTemplate gameDataTemplate)
     {
-        (MenuController.Instance as MenuController).PlayTheGame(rows, columns, colors);
+        (SceneController.Instance as MenuController).PlayTheGame(
+            gameDataTemplate.RowsCount,
+            gameDataTemplate.ColumnsCount,
+            gameDataTemplate.ColorsCount,
+            gameDataTemplate.Simulation,
+            gameDataTemplate.PlayerMovesCount,
+            gameDataTemplate.OnlyMatchingMoves);
     }
 }

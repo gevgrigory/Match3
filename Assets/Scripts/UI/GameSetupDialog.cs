@@ -5,6 +5,8 @@ using TMPro;
 
 public class GameSetupDialog : MonoBehaviour
 {
+    private const int MinCount = 2;
+
     [SerializeField]
     private GameDataTemplate defaultGameData;
 
@@ -27,12 +29,38 @@ public class GameSetupDialog : MonoBehaviour
     private GameObject colorsCountValidation;
 
     [SerializeField]
+    private Toggle simulationToggle;
+
+    [SerializeField]
     private Button closeButton;
 
     [SerializeField]
     private Button startButton;
 
-    private Action<int, int, int> onGameSetup;
+
+
+    [Header("Simulation")]
+    [SerializeField]
+    private GameObject simulationContainer;
+
+    [SerializeField]
+    private TMP_InputField playerMovesCountInput;
+
+    [SerializeField]
+    private GameObject playerMovesCountValidation;
+
+    [SerializeField]
+    private Toggle onlyMatchingToggle;
+
+    [SerializeField]
+    private Button simulationCloseButton;
+
+    [SerializeField]
+    private Button simulationStartButton;
+
+
+
+    private Action<GameDataTemplate> onGameSetup;
 
     protected void Awake()
     {
@@ -50,14 +78,25 @@ public class GameSetupDialog : MonoBehaviour
         rowsCountInput.text = defaultGameData.RowsCount.ToString();
         columnsCountInput.text = defaultGameData.ColumnsCount.ToString();
         colorsCountInput.text = defaultGameData.ColorsCount.ToString();
+        simulationToggle.isOn = defaultGameData.Simulation;
+
+
+
+        HideSimulationSetup();
+        simulationCloseButton.onClick.AddListener(HideSimulationSetup);
+        simulationStartButton.onClick.AddListener(OnSimulationStartClicked);
+        playerMovesCountInput.onValueChanged.AddListener(ValidatePlayerMoves);
+        playerMovesCountInput.text = defaultGameData.PlayerMovesCount.ToString();
+        onlyMatchingToggle.isOn = defaultGameData.OnlyMatchingMoves;
     }
 
-    public void Show(Action<int, int, int> onGameSetup)
+    public void Show(Action<GameDataTemplate> onGameSetup)
     {
         this.onGameSetup = onGameSetup;
 
         gameObject.SetActive(true);
 
+        HideSimulationSetup();
         SetStartButtonState();
     }
 
@@ -81,7 +120,7 @@ public class GameSetupDialog : MonoBehaviour
 
     private bool ValidateInput(TMP_InputField input)
     {
-        return !string.IsNullOrEmpty(input.text) && int.TryParse(input.text, out int count) && count > 0;
+        return !string.IsNullOrEmpty(input.text) && int.TryParse(input.text, out int count) && count >= MinCount;
     }
 
     private void SetStartButtonState()
@@ -94,14 +133,63 @@ public class GameSetupDialog : MonoBehaviour
         gameObject.SetActive(false);
     }
 
+    private void ShowSimulationSetup()
+    {
+        simulationContainer.SetActive(true);
+
+        SetSimulationStartButtonState();
+    }
+
+    private void ValidatePlayerMoves(string value)
+    {
+        playerMovesCountValidation.SetActive(!ValidateInput(playerMovesCountInput));
+        SetSimulationStartButtonState();
+    }
+
+    private void SetSimulationStartButtonState()
+    {
+        simulationStartButton.interactable = ValidateInput(playerMovesCountInput);
+    }
+
+    private void HideSimulationSetup()
+    {
+        simulationContainer.SetActive(false);
+    }
+
     private void OnStartClicked()
+    {
+        if (simulationToggle.isOn)
+        {
+            ShowSimulationSetup();
+        }
+        else
+        {
+            Hide();
+            onGameSetup?.Invoke(GetMainData());
+        }
+    }
+
+    private void OnSimulationStartClicked()
     {
         Hide();
 
-        int rows = int.Parse(rowsCountInput.text);
-        int columns = int.Parse(columnsCountInput.text);
-        int colors = int.Parse(colorsCountInput.text);
+        GameDataTemplate data = GetMainData();
 
-        onGameSetup?.Invoke(rows, columns, colors);
+        data.Simulation = true;
+        data.PlayerMovesCount = int.Parse(playerMovesCountInput.text);
+        data.OnlyMatchingMoves = onlyMatchingToggle.isOn;
+
+        onGameSetup?.Invoke(data);
+    }
+
+    private GameDataTemplate GetMainData()
+    {
+        GameDataTemplate data = ScriptableObject.CreateInstance<GameDataTemplate>();
+
+        data.RowsCount = int.Parse(rowsCountInput.text);
+        data.ColumnsCount = int.Parse(columnsCountInput.text);
+        data.ColorsCount = int.Parse(colorsCountInput.text);
+
+        return data;
     }
 }

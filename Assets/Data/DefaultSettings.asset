@@ -15,3 +15,6 @@ MonoBehaviour:
   RowsCount: 10
   ColumnsCount: 7
   ColorsCount: 5
+  Simulation: 0
+  PlayerMovesCount: 10
+  OnlyMatchingMoves: 1

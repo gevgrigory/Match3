@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -10,6 +9,7 @@ public class Board : MonoBehaviour
     private const float MinTilesInRowToDestroy = 3;
     private const float DelayAfterDestroy = 0.5f;
     private const float ItemMoveSpeed = 15f;
+    private const float AutoPlayMoveDelay = 1f;
 
     [SerializeField]
     [Range(0,1)]
@@ -45,17 +45,24 @@ public class Board : MonoBehaviour
     private Tile selectedTile;
 
     private bool usingSprites;
+    private bool autoPlay;
+    private bool animating;
 
     private List<Tile> animatingTiles = new List<Tile>();
     private List<Tile> curAnimatingTiles = new List<Tile>();
 
+    private MatchThreeLogic matchThreeLogic;
+    private Action<int> onScoreIncreased;
+
     #region Initialization
 
-    public void InitializeBoard(int rowsCount, int columnsCount, int colorsCount)
+    public void InitializeBoard(int rowsCount, int columnsCount, int colorsCount, MatchThreeLogic matchThreeLogic, Action<int> onScoreIncreased)
     {
         this.rowsCount = rowsCount;
         this.columnsCount = columnsCount;
         this.colorsCount = colorsCount;
+        this.matchThreeLogic = matchThreeLogic;
+        this.onScoreIncreased = onScoreIncreased;
 
         usingSprites = colorsCount <= items.Length;
         if (!usingSprites)
@@ -103,7 +110,7 @@ public class Board : MonoBehaviour
         {
             for (int j = 0; j < columnsCount; j++)
             {
-                AddItemToTile(CreateRandomItem(i, j), tileMatrix[i, j]);
+                AddItemToTile(CreateItem(i, j), tileMatrix[i, j]);
             }
         }
     }
@@ -122,12 +129,12 @@ public class Board : MonoBehaviour
 
     #region ItemCreation
 
-    private Item CreateRandomItem(int row, int column)
+    private Item CreateItem(int row, int column)
     {
         Vector3 position = GetPositionForNewItem(column);
         Item item = Instantiate(itemPrefab, position, Quaternion.identity, itemsParent).GetComponent<Item>();
 
-        int newId = GetNewIdForPosition(row, column);
+        int newId = matchThreeLogic.GetItemForPosition(row, column);
         if (usingSprites)
         {
             item.Init(newId, items[newId]);
@@ -137,24 +144,6 @@ public class Board : MonoBehaviour
             item.Init(newId, itemColors[newId]);
         }
         return item;
-    }
-
-    private int GetNewIdForPosition(int row, int column)
-    {
-        List<int> availableIdsToChoose = new List<int>();
-        for (int i = 0; i < colorsCount; i++)
-        {
-            if (!CanBeDestroyed(row, column, i))
-            {
-                availableIdsToChoose.Add(i);
-            }
-        }
-        if (availableIdsToChoose.Count > 0)
-        {
-            return availableIdsToChoose[UnityEngine.Random.Range(0, availableIdsToChoose.Count)];
-        }
-
-        return UnityEngine.Random.Range(0, colorsCount);
     }
 
     private Vector3 GetPositionForNewItem(int column)
@@ -184,9 +173,10 @@ public class Board : MonoBehaviour
 
     public void AnimateTile(Tile tile)
     {
-        GameController.Instance.BlockInteraction();
+        SceneController.Instance.BlockInteraction();
         curAnimatingTiles.Add(tile);
         animatingTiles.Add(tile);
+        animating = true;
     }
 
     protected void Update()
@@ -213,6 +203,43 @@ public class Board : MonoBehaviour
         }
     }
 
+    public void AutoPlayValueChanged(bool value)
+    {
+        if(autoPlay != value)
+        {
+            autoPlay = value;
+
+            if (autoPlay)
+            {
+                SceneController.Instance.BlockInteraction();
+                if (!animating)
+                {
+                    Invoke(nameof(AutoPlay), AutoPlayMoveDelay);
+                }
+            }
+            else
+            {
+                CancelInvoke(nameof(AutoPlay));
+                if (!animating)
+                {
+                    SceneController.Instance.AllowInteraction();
+                }
+            }
+        }
+    }
+
+    private void AutoPlay()
+    {
+        if(matchThreeLogic.GetGameMove(true, out Vector2Int tileToMove, out Vector2 direction))
+        {
+            TileMoved(tileMatrix[tileToMove.x, tileToMove.y], direction);
+        }
+        else
+        {
+            Debug.Log("No more moves");
+        }
+    }
+
     public void AnimationsComplete()
     {
         List<Tile> tilesToCheck = new List<Tile>(animatingTiles);
@@ -220,17 +247,33 @@ public class Board : MonoBehaviour
         List<Tile> destroyedTiles = new List<Tile>();
         foreach (Tile tile in tilesToCheck)
         {
-            if (tile.Item != null)
+            destroyedTiles.AddRange(DestroyIfNecessary(tile));
+        }
+        if(destroyedTiles.Count > 0)
+        {
+            onScoreIncreased?.Invoke(destroyedTiles.Count);
+            StartCoroutine(RunAfterDelay(DelayAfterDestroy, () =>
             {
-                destroyedTiles.AddRange(DestroyIfNecessary(tile, tile.Item.Id));
+                animating = false;
+                if (!autoPlay)
+                {
+                    SceneController.Instance.AllowInteraction();
+                }
+                CreateNewItems(destroyedTiles);
+            }));
+        }
+        else
+        {
+            animating = false;
+            if (autoPlay)
+            {
+                Invoke(nameof(AutoPlay), AutoPlayMoveDelay);
+            }
+            else
+            {
+                SceneController.Instance.AllowInteraction();
             }
         }
-        float delay = destroyedTiles.Count > 0 ? DelayAfterDestroy : 0;
-        StartCoroutine(RunAfterDelay(delay, () =>
-        {
-            CreateNewItems(destroyedTiles);
-            GameController.Instance.AllowInteraction();
-        }));
     }
 
     #endregion Animation
@@ -279,153 +322,63 @@ public class Board : MonoBehaviour
     public void TileMoved(Tile tile, Vector2 direction)
     {
         RemoveSelectedTile();
-        int otherTileRow = tile.Row + (int)direction.y;
-        int otherTileColumn = tile.Column + (int)direction.x;
-
-        if (CheckTileExists(otherTileRow, otherTileColumn))
+        if (matchThreeLogic.MoveItem(tile.Row, tile.Column, direction, out (Vector2Int, Vector2Int) changedTiles))
         {
-            Tile otherTile = tileMatrix[otherTileRow, otherTileColumn];
-            SwapTilesItems(tile, otherTile);
-            if (CanBeDestroyed(tile.Row, tile.Column, tile.Item.Id) || CanBeDestroyed(otherTile.Row, otherTile.Column, otherTile.Item.Id))
-            {
-                AddItemToTile(tile.Item, tile);
-                AddItemToTile(otherTile.Item, otherTile);
-            }
-            else
-            {
-                SwapTilesItems(tile, otherTile);
-                Debug.Log("These items can't swap");
-            }
+            Tile tile1 = tileMatrix[changedTiles.Item1.x, changedTiles.Item1.y];
+            Tile tile2 = tileMatrix[changedTiles.Item2.x, changedTiles.Item2.y];
+            Item item = tile1.Item;
+            AddItemToTile(tile2.Item, tile1);
+            AddItemToTile(item, tile2);
         }
-    }
-
-    private void SwapTilesItems(Tile tile1, Tile tile2)
-    {
-        Item item = tile1.Item;
-        tile1.SetItem(tile2.Item);
-        tile2.SetItem(item);
+        else
+        {
+            Debug.Log("These items can't swap");
+        }
     }
 
     #endregion TileInteraction
 
     #region ItemsMatching
 
-    private List<Tile> DestroyIfNecessary(Tile tile, int itemId)
+    private List<Tile> DestroyIfNecessary(Tile tile)
     {
         List<Tile> tilesToDestroy = new List<Tile>();
-        if (CanBeDestroyed(tile.Row, tile.Column, itemId))
+        List<Vector2Int> destroyedTiles = matchThreeLogic.DestroyIfNecessary(tile.Row, tile.Column);
+
+        for (int i = 0; i < destroyedTiles.Count; i++)
         {
-            GetItemsToDestroy(tile.Row, tile.Column, itemId, new List<Tile>(), tilesToDestroy);
-            for (int i = 0; i < tilesToDestroy.Count; i++)
-            {
-                tilesToDestroy[i].DestroyItem();
-            }
+            Tile curTile = tileMatrix[destroyedTiles[i].x, destroyedTiles[i].y];
+            curTile.DestroyItem();
+            tilesToDestroy.Add(curTile);
         }
         return tilesToDestroy;
     }
 
-    private bool CanBeDestroyed(int row, int column, int itemId)
-    {
-        //Don't return from the first match if we need to know what pattern exactly was destroyed.
-
-        //For horizontal patterns detection
-        int leftCount = DirectionCount(row, column - 1, Vector2Int.left, itemId);
-        if (leftCount + 1 >= MinTilesInRowToDestroy) return true;
-
-        int rightCount = DirectionCount(row, column + 1, Vector2Int.right, itemId);
-        if (rightCount + 1 >= MinTilesInRowToDestroy) return true;
-
-        int hotizontalCount = leftCount + rightCount + 1;
-        if (hotizontalCount >= MinTilesInRowToDestroy) return true;
-
-        //For vertical patterns detection
-        int topCount = DirectionCount(row + 1, column, Vector2Int.up, itemId);
-        if (topCount + 1 >= MinTilesInRowToDestroy) return true;
-
-        int bottomCount = DirectionCount(row - 1, column, Vector2Int.down, itemId);
-        if (bottomCount + 1 >= MinTilesInRowToDestroy) return true;
-
-        int verticalCount = topCount + bottomCount + 1;
-        if (verticalCount >= MinTilesInRowToDestroy) return true;
-
-        //For square patterns detection
-        if (leftCount > 0 && topCount > 0 && CheckTileItem(row + 1, column - 1, itemId)) return true;
-        if (rightCount > 0 && topCount > 0 && CheckTileItem(row + 1, column + 1, itemId)) return true;
-        if (leftCount > 0 && bottomCount > 0 && CheckTileItem(row - 1, column - 1, itemId)) return true;
-        if (rightCount > 0 && bottomCount > 0 && CheckTileItem(row - 1, column + 1, itemId)) return true;
-
-        return false;
-    }
-
-    private int DirectionCount(int row, int column, Vector2Int direction, int itemId)
-    {
-        if (CheckTileItem(row, column, itemId))
-        {
-            return DirectionCount(row + direction.y, column + direction.x, direction, itemId) + 1;
-        }
-        return 0;
-    }
-
-    private void GetItemsToDestroy(int row, int column, int itemId, List<Tile> consideredTiles, List<Tile> tilesToDestroy)
-    {
-        if(CheckTileItem(row, column, itemId))
-        {
-            Tile curTile = tileMatrix[row, column];
-            if (!consideredTiles.Contains(curTile))
-            {
-                if (CanBeDestroyed(row, column, itemId))
-                {
-                    tilesToDestroy.Add(curTile);
-                }
-                consideredTiles.Add(curTile);
-                GetItemsToDestroy(row, column - 1, itemId, consideredTiles, tilesToDestroy);
-                GetItemsToDestroy(row, column + 1, itemId, consideredTiles, tilesToDestroy);
-                GetItemsToDestroy(row + 1, column, itemId, consideredTiles, tilesToDestroy);
-                GetItemsToDestroy(row - 1, column, itemId, consideredTiles, tilesToDestroy);
-            }
-        }
-    }
-
     private void CreateNewItems(List<Tile> destroyedTiles)
     {
-        List<Tile> lowerItems = destroyedTiles.GroupBy(m => m.Column).Select(g => g.OrderBy(m => m.Row).First()).ToList();
-        for (int i = 0; i < lowerItems.Count; i++)
+        List<Vector2Int> tiles = new List<Vector2Int>();
+        for (int i = 0; i < destroyedTiles.Count; i++)
         {
-            int curColumn = lowerItems[i].Column;
-            int existingItemIndex = lowerItems[i].Row + 1;
-            for (int j = lowerItems[i].Row; j < rowsCount; j++)
-            {
-                while (existingItemIndex < rowsCount && tileMatrix[existingItemIndex, curColumn].Item == null)
-                {
-                    existingItemIndex++;
-                }
-                if (existingItemIndex < rowsCount)
-                {
-                    AddItemToTile(tileMatrix[existingItemIndex, curColumn].Item, tileMatrix[j, curColumn]);
-                    tileMatrix[existingItemIndex, curColumn].RemoveItem();
-                    existingItemIndex++;
-                }
-                else
-                {
-                    AddItemToTile(CreateRandomItem(j, curColumn), tileMatrix[j, curColumn]);
-                }
-            }
+            tiles.Add(new Vector2Int(destroyedTiles[i].Row, destroyedTiles[i].Column));
+        }
+        matchThreeLogic.FillEmptyTiles(tiles, out List<(Vector2Int, Vector2Int)> changedTiles);
+        foreach (var change in changedTiles)
+        {
+            Tile from = tileMatrix[change.Item1.x, change.Item1.y];
+            Tile to = tileMatrix[change.Item2.x, change.Item2.y];
+            AddItemToTile(from.Item, to);
+            from.RemoveItem();
+        }
+        matchThreeLogic.CreateNewItems(tiles, out List<Vector2Int> createdItems);
+        foreach (var position in createdItems)
+        {
+            AddItemToTile(CreateItem(position.x, position.y), tileMatrix[position.x, position.y]);
         }
     }
 
     #endregion ItemsMatching
 
     #region Util
-
-    private bool CheckTileExists(int row, int column)
-    {
-        return row >= 0 && column >= 0 && row < rowsCount && column < columnsCount;
-    }
-
-    private bool CheckTileItem(int row, int column, int itemId)
-    {
-        return CheckTileExists(row, column) && tileMatrix[row, column].Item != null && tileMatrix[row, column].Item.Id == itemId;
-    }
 
     public Vector2 GetBoardSize()
     {

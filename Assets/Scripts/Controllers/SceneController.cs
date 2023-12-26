@@ -1,9 +1,13 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
 public class SceneController : MonoBehaviour
 {
     public static SceneController Instance;
+
+    private readonly object runnablesLock = new object();
 
     [SerializeField]
     protected Camera gameCamera;
@@ -12,6 +16,8 @@ public class SceneController : MonoBehaviour
     protected SpriteRenderer background;
 
     public bool InteractionAllowed { get; protected set; }
+
+    private Queue<Action> runnables = new Queue<Action>();
 
     protected virtual void Awake()
     {
@@ -61,6 +67,39 @@ public class SceneController : MonoBehaviour
         if (nextSceneIndex < SceneManager.sceneCountInBuildSettings)
         {
             SceneManager.LoadScene(nextSceneIndex);
+        }
+    }
+
+    protected void RunInMainThread(Action action)
+    {
+        lock (runnablesLock)
+        {
+            runnables.Enqueue(action);
+        }
+    }
+
+    protected void Update()
+    {
+        if (runnables.Count > 0)
+        {
+            Queue<Action> curRunnables;
+            lock (runnablesLock)
+            {
+                curRunnables = new Queue<Action>(runnables);
+                runnables.Clear();
+            }
+            while (curRunnables.Count > 0)
+            {
+                Action action = curRunnables.Dequeue();
+                try
+                {
+                    action?.Invoke();
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogException(ex);
+                }
+            }
         }
     }
 
